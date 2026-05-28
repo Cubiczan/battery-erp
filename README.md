@@ -1,197 +1,288 @@
-# Battery ERP — Material, cell, pack, and supply-chain management with real-time
-# commodity pricing and Fabric Lakehouse analytics.
-#
-# Covers the full battery value chain: lithium, cobalt, nickel, manganese, graphite
-# through cell chemistries (NMC-811, NCA, LFP, LMO) to battery packs with BOM costing,
-# supplier scoring, inventory management, and what-if cost scenarios.
+# Green Li-ion Recycling ERP
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+**Hydrometallurgical battery recycling process management system for Green Li-ion Inc., Atoka, Oklahoma.**
+
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688)](https://fastapi.tiangolo.com/)
+[![Tests](https://img.shields.io/badge/tests-50%20passing-brightgreen)](tests/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-32%20passing-brightgreen)](tests/)
-[![Fabric](https://img.shields.io/badge/Microsoft-Fabric-0078D4)](https://fabric.microsoft.com)
+[![AWS](https://img.shields.io/badge/AWS-Lambda%20%2B%20Bedrock-FF9900)](https://aws.amazon.com/)
 
 ---
 
-## What this is
+## What This Is
 
-Battery ERP manages the **complete battery value chain** — from raw material sourcing
-through cell manufacturing to pack assembly. Every cost is traceable to a specific
-material, supplier, and price point.
+A purpose-built ERP for **lithium-ion battery black mass recycling** via hydrometallurgical processing. Manages the full plant workflow from black mass receiving through chemical leaching, metal precipitation, and product recovery. Every process step, chemical dose, lab result, and cost is tracked to the batch level.
 
-| Layer | Role |
+Built from the actual Standard Operating Procedures (SOPs) used at the Green Li-ion GLMC and MLD facilities.
+
+---
+
+## Process Overview
+
+```
+Black Mass Receiving          Chemical Tote Setup
+       |                            |
+       v                            v
++------------------+    +----------------------+
+| Recipe Calculator |<---| Composition Analysis |
+| (H2SO4/H2O2      |    | (Co%, Ni%, Mn%, Li%) |
+|  dosing per SOP)  |    +----------------------+
++--------+---------+
+         |
+         v
++-----------------------------------------------------+
+|  V-001: LEACHING                                     |
+|  DM Water (3000L) + Black Mass (500kg batch)         |
+|  4 dosing cycles: H2SO4 + H2O2 + 50L water rinse    |
+|  Agitation at 54Hz, gas scrubber monitoring           |
++-----------------------------------------------------+
+         |  Filter Press F-001
+         v
++-----------------------------------------------------+
+|  V-002: SEPARATION                                   |
+|  Ca(OH)2 dosing for impurity removal                 |
+|  NaOH pH adjustment to 5.0-5.2 (22 dosing rounds)   |
+|  Filter Press F-002 -> filtrate to V-003             |
++-----------------------------------------------------+
+         |  ICP Lab Analysis
+         v
++-----------------------------------------------------+
+|  V-003: NMC PRECIPITATION                            |
+|  ICP results -> molar ratio calculation              |
+|  CoSO4*7H2O / MnSO4*H2O additions to target 6:2:2  |
+|  NH4OH + NaOH for metal precipitation                |
+|  Output: NMC precursor (Ni-Mn-Co hydroxide)          |
++-----------------------------------------------------+
+         |
+         v
++-----------------------------------------------------+
+|  V-004: LITHIUM PRECIPITATION                        |
+|  Na2CO3 addition for Li2CO3 recovery                 |
+|  Filter Press F-004                                  |
+|  Output: Lithium carbonate                           |
++-----------------------------------------------------+
+         |
+         v
++-----------------------------------------------------+
+|  MLD CRYSTALLIZATION (separate system)               |
+|  MVR compressor, crystallizer, seal flush water      |
+|  Output: High-purity lithium salts                   |
++-----------------------------------------------------+
+```
+
+**Products:** NMC precursor, lithium carbonate, graphite (from F-001 filter cake)
+
+---
+
+## Functional Modules
+
+| Module | Description |
 |---|---|
-| **Data Models** | RawMaterial, CellChemistry, BatteryCell, BatteryPack, BOMItem, Supplier, InventoryRecord, PurchaseOrder, ManufacturingBatch |
-| **Business Rules** | BOM cost rollups, inventory status management, supplier scoring (composite A-D grade), manufacturing yield tracking, price trend analysis, what-if cost scenarios |
-| **Pricing Engine** | Default material price table (20+ materials), AlphaVantage integration for live commodity prices, FRED macro overlay |
-| **Analytics** | Inventory health reports, supply chain reports, manufacturing yield reports, chemistry cost comparison dashboards |
-| **Fabric Lakehouse** | 11 Delta tables for persistent storage and SQL analytics |
+| **Black Mass Inventory** | FIFO tracking with elemental composition (Co, Ni, Mn, Li, Al, Fe, Cu) |
+| **Chemical Inventory** | Tote-level tracking for H2SO4, H2O2, NaOH, NH4OH, CoSO4, MnSO4, Ca(OH)2, Na2CO3 |
+| **Recipe Calculator** | Scales SOP reference values (500kg/98% H2SO4 -> 1446.83kg) for any batch size |
+| **NMC Ratio Engine** | ICP ppm -> molar ratios -> CoSO4/MnSO4 dosage to hit target 6:2:2 ratio |
+| **Process Execution** | 68 SOP steps (Pre-Start -> V-001 -> V-002) with role assignment and sequential enforcement |
+| **Valve Validation** | 22 valves tracked across V-001, V-002, V-004 with conflict detection |
+| **Lab Samples** | ICP analysis entry with auto-calculated molar ratios and dosage recommendations |
+| **Batch Costing** | 10-chemical cost rollup + utilities + labor per the SOP Commercial sheet |
+| **Maintenance** | Digital GLMC-1 (27 items) and GLMLD-1 (22 items) monthly inspection forms |
+| **Work Orders** | Auto-generated from flagged inspection items with priority routing |
+| **Spare Parts** | Three-quote procurement workflow per SOP Spare Parts procedure |
+| **Supplier Scoring** | Composite score: quality 35%, OTD 35%, lead time 20%, certifications 10% |
 
 ---
 
-## Quick start
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **API** | Python 3.12, FastAPI, Pydantic v2 |
+| **ORM** | SQLAlchemy 2.0, Alembic migrations |
+| **Database** | PostgreSQL 16 |
+| **Cloud** | AWS Lambda (via Mangum), API Gateway, RDS, S3, Cognito |
+| **AI** | Amazon Bedrock (Claude) for process assistant and SOP Q&A |
+| **Local Dev** | Docker Compose (PostgreSQL + Redis + API) |
+| **Testing** | pytest (50 tests covering all business rules) |
+| **Linting** | ruff, mypy (strict) |
+
+---
+
+## Project Structure
+
+```
+battery-erp/
+  src/battery_erp/
+    app/
+      api/                  # FastAPI routers
+        black_mass.py       #   POST/GET/PUT/PATCH black mass batches
+        chemicals.py        #   GET chemicals, POST totes, reorder alerts
+        recipes.py          #   POST calculate, POST create, POST approve
+        process.py          #   POST batches, GET steps, PATCH step completion
+        lab.py              #   POST samples, POST nmc-calculate, GET dosage
+      models/
+        enums.py            # 20+ enums (BatchStatus, Vessel, ValveState, ...)
+        domain.py           # 22 SQLAlchemy models (User -> PurchaseOrder)
+      rules/                # Pure business logic (no DB dependencies)
+        recipe.py           #   H2SO4/H2O2 dosing from SOP reference values
+        nmc.py              #   ICP -> molar ratios -> dosage calculations
+        valve.py            #   Valve registry, conflict detection
+        costing.py          #   Batch cost rollup, yield calculation
+        inventory.py        #   FIFO selection, reorder alerts
+        maintenance.py      #   Inspection scheduling, work order generation
+        supplier.py         #   Composite scoring, three-quote check
+      schemas/              # Pydantic v2 request/response models
+      seed/                 # SOP-derived reference data
+        chemicals.py        #   9 chemicals from SOP Appendix A
+        process_steps.py    #   68 process step templates
+        inspection_items.py #   GLMC-1 (27) + GLMLD-1 (22) inspection items
+        runner.py           #   Database seeder
+      config.py             # pydantic-settings (ERP_ prefix)
+      main.py               # FastAPI app with 5 routers
+      lambda_handler.py     # AWS Lambda entry point (Mangum)
+      db/
+        base.py             # SQLAlchemy DeclarativeBase
+        session.py          # Engine, SessionLocal, get_db()
+  alembic/
+    versions/
+      0001_initial_schema.py  # All 22 tables
+  tests/
+    test_recycling_erp.py     # 50 unit tests
+  Dockerfile
+  docker-compose.yml
+  pyproject.toml
+  alembic.ini
+```
+
+---
+
+## Quick Start
+
+### Local Development (Docker)
 
 ```bash
 git clone https://codeberg.org/cubiczan/battery-erp.git
 cd battery-erp
-pip install pytest
+git checkout recycling-erp-phase1
 
-# Run all 32 tests
-PYTHONPATH=src pytest tests/ -v
+# Start PostgreSQL + Redis + API
+docker compose up -d
 
-# Use the modules
-PYTHONPATH=src python3 -c "
-from battery_erp.pricing import calculate_cell_cost_summary, get_material_price_table
-prices = get_material_price_table()
-for chem in ['NMC-811', 'NMC-622', 'NCA', 'LFP', 'LMO']:
-    r = calculate_cell_cost_summary(chem, 50.0, prices)
-    print(f'{chem}: \${r[\"cost_per_kwh\"]:.1f}/kWh (BOM: \${r[\"bom_cost_usd\"]:.2f})')
-"
+# API available at http://localhost:8000
+# OpenAPI docs at http://localhost:8000/docs
 ```
 
----
-
-## Architecture
-
-```
-                    ┌──────────────────────────────────────┐
-                    │  Raw Materials (20+ tracked)          │
-                    │  Lithium · Cobalt · Nickel · Mn · Gr  │
-                    └──────────────┬───────────────────────┘
-                                   │ BOM
-                    ┌──────────────▼───────────────────────┐
-                    │  Cell Chemistries                     │
-                    │  NMC-811 · NMC-622 · NCA · LFP · LMO  │
-                    └──────────────┬───────────────────────┘
-                                   │ cells + components
-                    ┌──────────────▼───────────────────────┐
-                    │  Battery Packs                        │
-                    │  EV · ESS · Consumer · Industrial     │
-                    └──────────────────────────────────────┘
-
-Side modules:
-  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-  │ Supplier Scoring │  │ Inventory Mgmt   │  │ Cost Scenarios    │
-  │ Composite 0-100  │  │ Reorder logic    │  │ What-if analysis  │
-  │ A/B/C/D grades   │  │ Status tracking  │  │ Price shock model │
-  └─────────────────┘  └──────────────────┘  └──────────────────┘
-```
-
----
-
-## Core modules
-
-### `battery_erp.core.models`
-All domain dataclasses:
-- `RawMaterial` — material catalog with pricing, HS codes, hazards
-- `CellChemistry` — NMC-111/622/811, NCA, LFP, LMO with energy density and cycle life
-- `BatteryCell` — cell specs (capacity, voltage, form factor, weight)
-- `BatteryPack` — pack assembly (cells + BMS + thermal)
-- `BOMItem` — bill of materials line item with waste factor
-- `Supplier` — supplier catalog with quality rating, lead time, certifications
-- `InventoryRecord` — warehouse positions with reorder logic
-- `PurchaseOrder` — PO lifecycle tracking
-- `ManufacturingBatch` — production batch yield tracking
-- `PriceHistory` — commodity price time series
-
-### `battery_erp.core.rules`
-Deterministic business rules:
-- `rollup_bom_cost()` — total BOM cost with material breakdown and waste cost
-- `calculate_cell_bom()` — generate representative BOM for any chemistry
-- `calculate_pack_bom()` — pack-level BOM (cells + casing + BMS + cooling)
-- `update_inventory_status()` — recalculate in_stock/low/out_of_stock
-- `check_reorder_suggestions()` — generate PO suggestions
-- `calculate_batch_metrics()` — aggregate manufacturing yield
-- `analyze_price_history()` — price trend analysis with volatility
-- `estimate_cell_cost_impact()` — what-if cost scenario modeling
-- `calculate_pack_metrics()` — pack energy density and efficiency
-
-### `battery_erp.supply_chain`
-Supply chain management:
-- `score_supplier()` — composite score (quality 35%, OTD 35%, lead time 20%, certs 10%)
-- `rank_suppliers()` — rank by score, filter by material
-- `create_purchase_order()` — PO creation from supplier data
-- `analyze_po_pipeline()` — PO pipeline analysis (overdue detection, lead time tracking)
-- `suggest_dual_sourcing()` — dual-sourcing strategy recommendation
-
-### `battery_erp.pricing`
-Commodity pricing:
-- `get_material_price_table()` — default prices for 20+ battery materials
-- `calculate_cell_cost_summary()` — quick cost estimate per chemistry
-- `update_prices_from_alpha_vantage()` — live commodity price fetch
-- `update_prices_from_fred()` — macro economic indicators
-
-### `battery_erp.analytics`
-Reporting:
-- `generate_inventory_report()` — full inventory health dashboard
-- `generate_supply_chain_report()` — supplier + PO pipeline report
-- `generate_manufacturing_report()` — yield metrics
-- `generate_pricing_report()` — chemistry cost comparison + price trends
-
----
-
-## Chemistry cost comparison (default prices, 50Ah cell)
-
-| Chemistry | BOM Cost | $/kWh | Cathode % | Key feature |
-|---|---|---|---|---|
-| **LFP** | Lowest | ~$50-55 | ~35% | No Co/Ni, ultra-safe, 4000+ cycles |
-| **LMO** | Low | ~$55-60 | ~40% | Low cost, power tools |
-| **NMC-111** | Medium | ~$70-80 | ~50% | Balanced, legacy |
-| **NMC-622** | Medium | ~$75-85 | ~48% | Good energy-cost balance |
-| **NMC-811** | Higher | ~$80-90 | ~52% | High energy, EV dominant |
-| **NCA** | Highest | ~$85-95 | ~55% | Tesla flagship, 270 Wh/kg |
-
----
-
-## Microsoft Fabric Integration
-
-### Fabric Notebooks
-
-| Notebook | Purpose |
-|---|---|
-| `fabric_setup_lakehouse.py` | Create all 11 Delta tables with seed data |
-| `fabric_cost_dashboard.py` | Full cost analytics dashboard (chemistry comparison, pack costing, inventory, suppliers, price trends, scenarios) |
-
-### Delta Table Schema
-
-| Table | Key Columns |
-|---|---|
-| `raw_materials` | material_id, name, category, unit_price_usd, price_source, hs_code |
-| `cell_chemistries` | chemistry_id, name, cathode_type, energy_density_wh_per_kg, cycle_life |
-| `battery_cells` | cell_id, sku, chemistry, form_factor, nominal_capacity_ah, energy_wh, weight_kg |
-| `battery_packs` | pack_id, sku, cell_sku, total_cells, nominal_capacity_kwh, pack_weight_kg |
-| `bill_of_materials` | bom_id, parent_sku, material_name, quantity_per_unit, unit_cost_usd, waste_factor_pct |
-| `suppliers` | supplier_id, name, country, materials_supplied, quality_rating, lead_time_days |
-| `inventory` | record_id, sku, material_name, quantity_on_hand, quantity_reserved, reorder_point |
-| `purchase_orders` | po_id, po_number, supplier_name, quantity, total_usd, status, expected_delivery |
-| `price_history` | material_name, price_usd, as_of, source |
-| `manufacturing_batches` | batch_id, product_sku, chemistry, quantity_produced, quantity_pass, yield_pct |
-| `cost_scenarios` | scenario_id, scenario_name, material_name, current_price_usd, scenario_price_usd, pct_change |
-
-### Fabric Quick Start
-
-1. Run `fabric_setup_lakehouse.py` to create all 11 Delta tables
-2. Run `fabric_cost_dashboard.py` for the full analytics dashboard
-3. Dashboard covers: chemistry cost comparison, pack-level costing, inventory health, supplier scorecard, price trends, manufacturing yield, cost scenarios
-
----
-
-## Tests
+### Without Docker
 
 ```bash
-PYTHONPATH=src pytest tests/ -v
-# 32 tests passing: models, BOM costing, inventory, supplier scoring,
-#                    price analytics, cost scenarios, pack metrics, reports
+pip install -e ".[dev]"
+
+# Set database URL
+export ERP_DATABASE_URL=postgresql://erp:erp@localhost:5432/battery_erp
+
+# Run migrations
+alembic upgrade head
+
+# Start API
+uvicorn battery_erp.app.main:app --reload
+```
+
+### Run Tests
+
+```bash
+pip install -e ".[dev]"
+pytest tests/test_recycling_erp.py -v
+# 50 passed -- recipe calc, NMC engine, valve conflicts, costing, inventory, maintenance, supplier scoring
 ```
 
 ---
 
-## Use cases
+## API Endpoints
 
-- **Cell manufacturers** — BOM cost tracking across chemistries, yield optimization
-- **Pack integrators** — pack-level cost estimation, supplier selection
-- **Procurement** — supplier scoring, dual-sourcing, PO pipeline management
-- **Finance** — commodity price risk, what-if scenarios, inventory valuation
-- **C-suite** — dashboard showing $/kWh trends, supply chain resilience, cost reduction opportunities
+```
+# Health
+GET    /health
+
+# Black Mass Management
+POST   /api/v1/black-mass                     # Register new batch
+GET    /api/v1/black-mass                     # List (filterable by status)
+GET    /api/v1/black-mass/{id}                # Detail + composition
+PUT    /api/v1/black-mass/{id}                # Update
+PATCH  /api/v1/black-mass/{id}/consume        # Record consumption
+
+# Chemical & Tote Management
+GET    /api/v1/chemicals                      # List with computed stock levels
+POST   /api/v1/chemicals/totes                # Register tote
+PATCH  /api/v1/chemicals/totes/{id}/connect   # Connect to vessel
+PATCH  /api/v1/chemicals/totes/{id}/level     # Update level
+GET    /api/v1/chemicals/reorder-alerts       # Below-min-stock alerts
+
+# Recipe Management
+POST   /api/v1/recipes/calculate              # Pure calculation (no persist)
+POST   /api/v1/recipes                        # Create recipe
+GET    /api/v1/recipes                        # List
+POST   /api/v1/recipes/{id}/approve           # Approve
+
+# GLMC Process Execution
+POST   /api/v1/batches                        # Create batch (auto-seeds 68 steps)
+GET    /api/v1/batches                        # List
+GET    /api/v1/batches/{id}                   # Detail
+GET    /api/v1/batches/{id}/steps             # All steps
+PATCH  /api/v1/batches/{id}/steps/{step_id}   # Complete step (sequential enforcement)
+
+# Lab & NMC Calculations
+POST   /api/v1/lab/samples                    # Submit ICP sample
+GET    /api/v1/lab/samples                    # List samples
+POST   /api/v1/lab/nmc-calculate              # Calculate NMC dosage
+GET    /api/v1/lab/samples/{id}/dosage        # Dosage recommendation + persist
+```
+
+---
+
+## Key Business Rules (from SOPs)
+
+| Rule | Description |
+|---|---|
+| **Recipe Scaling** | Linear from SOP reference: 500kg batch -> 1446.83 kg H2SO4 (98%), 279.41 L H2O2 (34%) |
+| **4-Step Dosing** | H2SO4 and H2O2 split into 4 equal dosing rounds per V-001 SOP |
+| **NMC Target** | 6:2:2 Ni:Mn:Co molar ratio with 5% tolerance band |
+| **Step Sequencing** | Process steps enforced in order; pre-start must complete before V-001 |
+| **Valve Conflicts** | XV-213/XV-212 (diverter), XV-109/MV-466 (acid), XV-102/XV-109 (dual dosing) blocked |
+| **FIFO Inventory** | Oldest black mass batch consumed first |
+| **Chemical Reorder** | Alert when stock <= min_stock; critical when stock = 0 |
+| **30-Day Inspection** | Monthly maintenance due; 7-day reminder; overdue tracking |
+| **Three-Quote Rule** | Spare part POs require 3 quotes minimum |
+| **Supplier Scoring** | Composite: quality 35% + OTD 35% + lead time 20% + certs 10% -> A/B/C/D grade |
+
+---
+
+## AWS Architecture (Production)
+
+```
+CloudFront -> API Gateway (HTTP) -> AWS Lambda (FastAPI via Mangum)
+                                        |
+                    +-------------------+-------------------+
+                    |                   |                   |
+              RDS PostgreSQL      ElastiCache         Amazon Bedrock
+              (via RDS Proxy)       (Redis)         (Claude - SOP Q&A,
+                                                    recipe advisor)
+
+Cognito (auth) | SES (email alerts) | SNS/SQS (events) | S3 (docs/SOPs)
+```
+
+---
+
+## SOP Source Documents
+
+| Document | Content |
+|---|---|
+| GLMC 1.0 Operating SOP.xlsx | Start-up procedure, V-001 through V-004 steps, recipe calculator, NMC sheet, commercial costs |
+| User Manual of MLD (EC Config.).xlsx | MVR system, crystallizer, seal flush, condensate water |
+| GLMC-1 Monthly Maintenance Inspection Form.xlsx | 27 inspection items across 6 categories |
+| GLMLD-1 Monthly Maintenance Inspection Form.xlsx | 22 inspection items across 5 categories |
+| Black_Mass_Inventory_Template.xlsx | Batch tracking template |
+| SOP Spare Parts.xlsx | 6-step procurement workflow |
 
 ---
 
@@ -199,37 +290,4 @@ PYTHONPATH=src pytest tests/ -v
 
 MIT. See [LICENSE](LICENSE).
 
----
-
-## CHP Governance
-
-This repository is hardened with the [Consensus Hardening Protocol (CHP)](https://codeberg.org/cubiczan/consensus-hardening-protocol), Cubiczan's decision-governance layer for multi-agent AI systems.
-
-### Protocol Layers
-- **R0 Gate**: All decisions must pass Solvable, Scoped, Valid, Worth_it checks
-- **Foundation Disclosure**: 1-3 weakest assumptions, 1-2 invalidation conditions, 1 key vulnerability
-- **Adversarial Layer**: Mandatory devil's advocate at Phase 0 and Round 3
-- **State Machine**: EXPLORING → PROVISIONAL → PROVISIONAL_LOCK → LOCKED
-- **Third-Party Validation**: Independent CONFIRM/REJECT before lock
-
-### Domain Configuration
-- **Category**: Mining / Supply Chain
-- **Foundation Threshold**: 75
-- **CFO Accuracy Guard**: Disabled
-
-### Compliance Artifacts
-| File | Purpose |
-|------|---------|
-| `.chp/STATE_MACHINE.md` | Decision state transitions |
-| `.chp/R0_CONFIG.yaml` | Domain-calibrated thresholds |
-| `.chp/ADVERSARIAL_PROMPTS.md` | Standardized challenge templates |
-| `.chp/CHP_COMPLIANCE.md` | Compliance tracking & audit trail |
-
-### CHP Version
-cognitive-mesh-orchestrator 0.1.0 | [Protocol Docs](https://codeberg.org/cubiczan/consensus-hardening-protocol)
-
-
-## Demo
-
-[![Demo Video](https://img.shields.io/badge/Watch_Demo-3min-blue)](docs/media/battery-erp-demo.mp4)
-
+Copyright 2026 Shyam Desigan, Green Li-ion Inc. All rights reserved.
